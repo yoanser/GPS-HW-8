@@ -1,0 +1,98 @@
+clear;
+clc;
+close all;
+load('HW8data.mat');
+
+%% Question 1 Seeing what satellites are visible
+%Read almanac corresponding to hw 8 date (Aug 24 2025)
+[gps_alm,gps_alm_cell] = read_GPSyuma('236.alm.txt',2);
+
+%Make datetime array of when data in hw 8 was collected
+hw8dateTime = datetime("24 August 2025 22:39:12", ...
+    "InputFormat", "dd MMMM yyyy HH:mm:ss", ...
+    "Locale", "en_US");
+
+[hw8WN, hw8TOW,~] = cal2gps(hw8dateTime);
+
+%find ECEF of position where data was collected
+ECEF_Data = lla2ecef([40 -105.244 1620]);
+
+%Loop to get positions of all satellites at hw 8 time and AZ and EL
+
+for i = 1:32
+
+[~,satPos(i,:),~] = alm2pos(gps_alm,[hw8WN hw8TOW],i);
+
+satPoswPRN = [i satPos(i,:)];
+
+[AZ(i), EL(i), ~, PRN(i)] = NEWcompute_azelrange(ECEF_Data, satPoswPRN);
+
+end
+
+%Filter for only visible satellites
+EL(EL<0) = NaN;
+AZ(EL<0) = NaN;
+PRN(EL<0) = NaN;
+
+%Plot sky plot of visible satellites
+plotAzEl(AZ,EL,PRN)
+title("Visible GPS Satellites at 22:39:12 on Aug 24, 2025 on Baseline");
+
+%% Question 2
+%Creating time vector
+deltat = 0.5/length(signal);
+
+timeVec = 0:deltat:0.001-deltat
+
+%PRN 03 code
+%% PRN 3 (we phase select bits 4 and 8)
+f_chip = 1.023e6;          % GPS L1 C/A chip rate (1.023 MHz)
+Nchip = 1023;             % Chips per 1 ms 
+G2 = ones(1,10);
+G1 = ones(1,10)
+
+for i=1:Nchip
+
+    %XOR operations
+    G1xorSum = xor(G1(3),G1(10));
+    G2xorSum = xor(G2(2), xor(G2(3), xor(G2(6), xor(G2(8), xor(G2(9), G2(10))))));
+    GphasexorPNR3 = xor(G2(4),G2(8));
+    CAoutputPRN3(i) = xor(G1(10),GphasexorPNR3); % Output signal
+
+    %Shifting registers to the right
+    G1 = [G1xorSum, G1(1:9)];
+    G2 = [G2xorSum, G2(1:9)];
+end
+
+%Turn 0's into 1, 1 into -1 (correct GPS convention!)
+CAoutputPRN3 = double(CAoutputPRN3); %Convert to numerical array
+CAoutputPRN3(CAoutputPRN3==1) = -1;
+CAoutputPRN3(CAoutputPRN3 == 0) = 1;
+
+%map prn code to time vector
+chip_idx = mod(floor(timeVec * f_chip), Nchip) + 1;
+x = CAoutputPRN3(chip_idx);   % 1-by-n vector aligned with t
+
+setDoppler = 3500; %User set doppler delay Hz
+setTimeDelay = deltat.*294; %User set time delay s
+k = setTimeDelay./deltat; % must be integer
+
+%Doppler effect
+theta = 2*pi*(20e3 + setDoppler).*timeVec;
+
+%Vector of local replica
+
+S_L = x.*exp(-1i.*theta);
+
+%Integrate and dump output use matlab circ shift to circularly shift local replica
+S_r = signal(1:8000);
+S=sum(S_r.*circshift(S_L,k))
+% for i = 1:length(S_L)
+% S = S + S_r(i)*circshift(S_L, k)
+% 
+% end
+
+
+
+
+
