@@ -39,11 +39,6 @@ plotAzEl(AZ,EL,PRN)
 title("Visible GPS Satellites at 22:39:12 on Aug 24, 2025 on Baseline");
 
 %% Question 2
-%Creating time vector
-deltat = 0.5/length(signal);
-
-timeVec = 0:deltat:0.001-deltat
-
 %PRN 03 code
 %% PRN 3 (we phase select bits 4 and 8)
 f_chip = 1.023e6;          % GPS L1 C/A chip rate (1.023 MHz)
@@ -69,30 +64,62 @@ CAoutputPRN3 = double(CAoutputPRN3); %Convert to numerical array
 CAoutputPRN3(CAoutputPRN3==1) = -1;
 CAoutputPRN3(CAoutputPRN3 == 0) = 1;
 
-%map prn code to time vector
-chip_idx = mod(floor(timeVec * f_chip), Nchip) + 1;
-x = CAoutputPRN3(chip_idx);   % 1-by-n vector aligned with t
-
-setDoppler = 3500; %User set doppler delay Hz
-setTimeDelay = deltat.*294; %User set time delay s
-k = setTimeDelay./deltat; % must be integer
-
-%Doppler effect
-theta = 2*pi*(20e3 + setDoppler).*timeVec;
-
-%Vector of local replica
-
-S_L = x.*exp(-1i.*theta);
-
-%Integrate and dump output use matlab circ shift to circularly shift local replica
-S_r = signal(1:8000);
-S=sum(S_r.*circshift(S_L,k))
-% for i = 1:length(S_L)
-% S = S + S_r(i)*circshift(S_L, k)
-% 
-% end
+[magS,chip_idx] = carrierWipeandCorr(signal(1:8000),0.001,CAoutputPRN3,0.001,3500,294);
 
 
+
+%% Question 3
+[magS,chip_idx] = carrierWipeandCorr(signal(1:8000),0.001,CAoutputPRN3,0.001,3500,294);
+deltat = 0.5/length(signal);
+
+%defining axis for 3d plot
+delaySample = 1:8000;
+dopplerAxis = -2000:500:8000;
+
+[chips, doppler] = meshgrid(chip_idx,dopplerAxis);
+
+
+
+%nested for loop to create grid of magnitude of S
+for i = 1:length(dopplerAxis)
+
+    for j = 1:length(delaySample)
+        [S(i,j),~] = carrierWipeandCorr(signal(1:8000),0.001,CAoutputPRN3,0.001,dopplerAxis(i),delaySample(j));
+    end
+
+
+end
+
+%normalize S peak to 1
+maxS = max(S,[],"all");
+S = S./maxS;
+
+figure();
+surf(chips,doppler,S);
+xlabel("C/A Code Chips");
+ylabel("Doppler (Hz)");
+zlabel("Normalized S magnitude");
+title("Magnitude of S for PRN 3");
+
+
+%% tedt
+%finding when correlation is max in samples and in chips
+[maxDopidx, maxSampleidx] = find(S == max(S, [], 'all'))
+maxDopplerPRN3 = dopplerAxis(maxDopidx)
+maxSamplePRN3 = delaySample(maxSampleidx)
+maxChipPRN3 = chip_idx(maxSampleidx)
+
+figure();
+plot(chip_idx,S(maxDopidx,:))
+title('Plotting Max Doppler Bin for PRN 3')
+ylabel('S (normalized magnitude)')
+xlabel('Chip Delay (chips)')
+
+figure();
+plot(dopplerAxis,S(:,maxSampleidx))
+title('Plotting Max Delay Bin for PRN 3')
+ylabel('S (normalized magnitude)')
+xlabel('Doppler Freq (Hz)')
 
 
 
